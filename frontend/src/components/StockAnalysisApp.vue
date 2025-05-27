@@ -271,9 +271,12 @@ const stockTableColumns = ref<DataTableColumns<StockInfo>>([
   {
     title: '价格',
     key: 'price',
-    width: 100,
+    width: 140,
     render(row: StockInfo) {
-      return row.price !== undefined ? row.price.toFixed(2) : '--';
+      if (row.price === undefined) return '--';
+      const priceText = row.price.toFixed(2);
+      const dateText = row.price_date ? ` (${formatTableDate(row.price_date)})` : '';
+      return priceText + dateText;
     }
   },
   {
@@ -369,6 +372,23 @@ const stockTableColumns = ref<DataTableColumns<StockInfo>>([
         return date.toISOString().split('T')[0];
       } catch (e) {
         return row.analysis_date;
+      }
+    }
+  },
+  {
+    title: '数据延迟',
+    key: 'data_delay',
+    width: 100,
+    render(row: StockInfo) {
+      if (!row.analysis_date || !row.price_date) return '--';
+      try {
+        const analysisDate = new Date(row.analysis_date);
+        const priceDate = new Date(row.price_date);
+        const diffTime = analysisDate.getTime() - priceDate.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays > 0 ? `${diffDays}天` : '当日';
+      } catch (e) {
+        return '--';
       }
     }
   },
@@ -542,6 +562,10 @@ function handleStreamUpdate(data: StreamAnalysisUpdate) {
     
     if (data.analysis_date !== undefined) {
       stock.analysis_date = data.analysis_date;
+    }
+    
+    if (data.price_date !== undefined) {
+      stock.price_date = data.price_date;
     }
     
     // 使用Vue的响应式API更新数组
@@ -928,6 +952,24 @@ function getChineseVolumeStatus(status: string): string {
     'NORMAL': '正常'
   };
   return statusMap[status] || status;
+}
+
+// 辅助函数：格式化表格中的日期
+function formatTableDate(dateStr: string | undefined | null): string {
+  if (!dateStr) return '';
+  try {
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) {
+      return dateStr;
+    }
+    // 返回中文格式的日期：2025年5月27日
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    return `${year}年${month}月${day}日`;
+  } catch (e) {
+    return dateStr;
+  }
 }
 
 // 页面加载时获取默认配置和公告

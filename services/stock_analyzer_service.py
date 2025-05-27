@@ -6,6 +6,7 @@ from services.stock_data_provider import StockDataProvider
 from services.technical_indicator import TechnicalIndicator
 from services.stock_scorer import StockScorer
 from services.ai_analyzer import AIAnalyzer
+import pandas as pd
 
 # 获取日志器
 logger = get_logger()
@@ -136,19 +137,37 @@ class StockAnalyzerService:
             else:
                 volume_status = "NORMAL"
                 
-            # 当前分析日期
+            # 分析日期：系统进行分析的日期（当前日期）
             analysis_date = datetime.now().strftime('%Y-%m-%d')
+            
+            # 价格日期：数据的最新日期
+            if not df_with_indicators.empty and hasattr(df_with_indicators.index, 'max'):
+                try:
+                    latest_data_date = df_with_indicators.index.max()
+                    if pd.notna(latest_data_date) and hasattr(latest_data_date, 'strftime'):
+                        price_date = latest_data_date.strftime('%Y-%m-%d')
+                        logger.info(f"📅 [日期信息] 分析日期: {analysis_date}, 价格日期: {price_date}")
+                    else:
+                        price_date = analysis_date
+                        logger.warning(f"⚠️  [价格日期] 数据日期无效，使用分析日期: {price_date}")
+                except Exception as e:
+                    price_date = analysis_date
+                    logger.warning(f"⚠️  [价格日期] 获取数据日期失败，使用分析日期: {price_date}, 错误: {e}")
+            else:
+                price_date = analysis_date
+                logger.warning(f"⚠️  [价格日期] 数据为空，使用分析日期: {price_date}")
             
             # 生成基本分析结果
             basic_result = {
                 "stock_code": stock_code,
                 "market_type": market_type,
-                "analysis_date": analysis_date,
+                "analysis_date": analysis_date,    # 分析日期（系统当前日期）
+                "price_date": price_date,          # 价格日期（数据最新日期）
                 "score": score,
                 "price": latest_data['Close'],
-                "price_change_value": price_change_value,  # 价格变动绝对值
-                "price_change": change_percent,  # 兼容旧版前端，传递涨跌幅
-                "change_percent": change_percent,  # 涨跌幅百分比，新字段
+                "price_change_value": price_change_value,
+                "price_change": change_percent,
+                "change_percent": change_percent,
                 "ma_trend": ma_trend,
                 "rsi": latest_data.get('RSI', 0),
                 "macd_signal": macd_signal,

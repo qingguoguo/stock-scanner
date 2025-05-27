@@ -11,6 +11,9 @@
             <div class="stock-price">
               <span class="label">当前价格:</span>
               <span class="value">{{ stock.price.toFixed(2) }}</span>
+              <span class="price-date" v-if="stock.price_date">
+                ({{ formatDate(stock.price_date) }})
+              </span>
             </div>
             <div class="stock-change" :class="{ 
               'up': calculatedChangePercent && calculatedChangePercent > 0,
@@ -72,6 +75,15 @@
           <n-icon><CalendarOutline /></n-icon>
         </template>
         分析日期: {{ formatDate(stock.analysis_date) }}
+      </n-tag>
+    </div>
+    
+    <div class="data-delay-notice" v-if="showDataDelayNotice">
+      <n-tag type="warning" size="small">
+        <template #icon>
+          <n-icon><TimeOutline /></n-icon>
+        </template>
+        数据延迟: {{ getDataDelayDays }}天
       </n-tag>
     </div>
     
@@ -148,7 +160,8 @@ import {
   CalendarOutline,
   CopyOutline,
   HourglassOutline,
-  ReloadOutline
+  ReloadOutline,
+  TimeOutline
 } from '@vicons/ionicons5';
 import { parseMarkdown } from '@/utils';
 import type { StockInfo } from '@/types';
@@ -245,7 +258,11 @@ function formatDate(dateStr: string | undefined | null): string {
     if (isNaN(date.getTime())) {
       return dateStr;
     }
-    return date.toISOString().split('T')[0];
+    // 返回中文格式的日期：2025年5月27日
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    return `${year}年${month}月${day}日`;
   } catch (e) {
     return dateStr;
   }
@@ -329,6 +346,20 @@ async function copyStockAnalysis() {
     // 添加分析日期
     if (props.stock.analysis_date) {
       result += `分析日期: ${formatDate(props.stock.analysis_date)}\n`;
+    }
+    
+    // 添加价格日期（如果与分析日期不同）
+    if (props.stock.price_date && props.stock.price_date !== props.stock.analysis_date) {
+      result += `价格日期: ${formatDate(props.stock.price_date)}\n`;
+      const delayDays = getDataDelayDays.value;
+      if (delayDays > 0) {
+        result += `数据延迟: ${delayDays}天\n`;
+      }
+    }
+    
+    // 添加价格信息
+    if (props.stock.price !== undefined) {
+      result += `当前价格: ${props.stock.price.toFixed(2)}\n`;
     }
     
     // 添加评分和推荐信息
@@ -505,6 +536,25 @@ function smoothScrollToBottom(element: HTMLElement) {
     behavior: 'smooth'
   });
 }
+
+// 添加计算属性
+const showDataDelayNotice = computed(() => {
+  if (!props.stock.analysis_date || !props.stock.price_date) return false;
+  return props.stock.analysis_date !== props.stock.price_date;
+});
+
+const getDataDelayDays = computed(() => {
+  if (!props.stock.analysis_date || !props.stock.price_date) return 0;
+  try {
+    const analysisDate = new Date(props.stock.analysis_date);
+    const priceDate = new Date(props.stock.price_date);
+    const diffTime = analysisDate.getTime() - priceDate.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  } catch (e) {
+    return 0;
+  }
+});
 </script>
 
 <style scoped>
@@ -1514,6 +1564,17 @@ function smoothScrollToBottom(element: HTMLElement) {
     opacity: 0.8;
     border-radius: 0 0 0.5rem 0.5rem;
     z-index: 2;
+  }
+  
+  .price-date {
+    font-size: 0.75rem;
+    color: var(--n-text-color-3);
+    margin-left: 8px;
+    font-weight: normal;
+  }
+  
+  .data-delay-notice {
+    margin-top: 8px;
   }
 }
 

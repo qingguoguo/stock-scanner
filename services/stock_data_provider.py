@@ -61,9 +61,15 @@ class StockDataProvider:
         if isinstance(end_date, str) and '-' in end_date:
             end_date = end_date.replace('-', '')
             
+        # 🔍 添加详细的请求日志
+        logger.info(f"🔍 [AKSHARE请求] 开始获取股票数据")
+        logger.info(f"📊 [AKSHARE请求] 股票代码: {stock_code}, 市场: {market_type}")
+        logger.info(f"📅 [AKSHARE请求] 请求日期范围: {start_date} 到 {end_date}")
+        logger.info(f"🕐 [AKSHARE请求] 当前系统时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
         try:
             if market_type == 'A':
-                logger.debug(f"获取A股数据: {stock_code}")
+                logger.info(f"📈 [AKSHARE-A股] 调用 ak.stock_zh_a_hist(symbol={stock_code}, start_date={start_date}, end_date={end_date}, adjust='qfq')")
                 
                 df = ak.stock_zh_a_hist(
                     symbol=stock_code,
@@ -72,71 +78,103 @@ class StockDataProvider:
                     adjust="qfq"
                 )
                 
+                # 🔍 添加A股原始数据日志
+                logger.info(f"📊 [AKSHARE-A股] 原始数据形状: {df.shape}")
+                logger.info(f"📋 [AKSHARE-A股] 原始列名: {df.columns.tolist()}")
+                
+                if not df.empty:
+                    logger.info(f"✅ [AKSHARE-A股] 数据获取成功")
+                    logger.info(f"🔍 [AKSHARE-A股] 原始索引类型: {type(df.index)}")
+                    logger.info(f"📅 [AKSHARE-A股] 原始索引范围: {df.index[0]} 到 {df.index[-1]}")
+                    
+                    # 显示原始数据样本
+                    logger.info(f"📋 [AKSHARE-A股] 最新3行原始数据:")
+                    for i, (idx, row) in enumerate(df.tail(3).iterrows()):
+                        logger.info(f"   第{i+1}行: 日期={idx}, 收盘={row.get('收盘', 'N/A')}, 涨跌幅={row.get('涨跌幅', 'N/A')}")
+                else:
+                    logger.warning(f"⚠️  [AKSHARE-A股] 获取到空数据，可能原因：股票代码不存在、停牌、或数据源问题")
+                    # 直接返回空DataFrame，避免后续处理错误
+                    return pd.DataFrame()
+                
             elif market_type in ['HK']:
-                logger.debug(f"获取港股数据: {stock_code}")
+                logger.info(f"📈 [AKSHARE-港股] 调用 ak.stock_hk_daily(symbol={stock_code}, adjust='qfq')")
                 df = ak.stock_hk_daily(
                     symbol=stock_code,
                     adjust="qfq"
                 )
                 
-                # 在获取数据后进行日期过滤
-                try:
-                    if not isinstance(df.index, pd.DatetimeIndex):
-                        # 如果存在命名为'date'的列，将其设为索引
-                        if 'date' in df.columns:
-                            df['date'] = pd.to_datetime(df['date'])
-                            df.set_index('date', inplace=True)
-                        else:
-                            # 尝试将第一列转换为日期索引
-                            date_col = df.columns[0]
-                            df[date_col] = pd.to_datetime(df[date_col])
-                            df.set_index(date_col, inplace=True)
+                # 🔍 添加港股原始数据日志
+                logger.info(f"📊 [AKSHARE-港股] 原始数据形状: {df.shape}")
+                logger.info(f"📋 [AKSHARE-港股] 原始列名: {df.columns.tolist()}")
+                
+                if not df.empty:
+                    logger.info(f"✅ [AKSHARE-港股] 数据获取成功")
+                    logger.info(f"🔍 [AKSHARE-港股] 原始索引类型: {type(df.index)}")
                     
-                    # 转换日期字符串为日期对象
-                    if start_date:
+                    # 🔧 修复港股日期索引问题
+                    if 'date' in df.columns:
+                        logger.info(f"🔧 [AKSHARE-港股] 发现date列，准备设置为索引")
+                        # 显示原始date列的样本
+                        logger.info(f"📅 [AKSHARE-港股] 原始date列样本: {df['date'].tail(3).tolist()}")
+                        
+                        # 将date列转换为日期时间类型并设为索引
+                        df['date'] = pd.to_datetime(df['date'])
+                        df.set_index('date', inplace=True)
+                        logger.info(f"🔧 [AKSHARE-港股] 已将date列设置为索引")
+                        logger.info(f"📅 [AKSHARE-港股] 日期索引范围: {df.index.min()} 到 {df.index.max()}")
+                        
+                        # 显示处理后的数据样本
+                        logger.info(f"📋 [AKSHARE-港股] 最新3行数据（已设置日期索引）:")
+                        for i, (idx, row) in enumerate(df.tail(3).iterrows()):
+                            close_val = row.get('close', 'N/A')
+                            date_str = idx.strftime('%Y-%m-%d') if hasattr(idx, 'strftime') else str(idx)
+                            logger.info(f"   第{i+1}行: 日期={date_str}, 收盘={close_val}")
+                    else:
+                        logger.warning(f"⚠️  [AKSHARE-港股] 未找到date列，使用数字索引")
+                        logger.info(f"📅 [AKSHARE-港股] 数字索引范围: {df.index.min()} 到 {df.index.max()}")
+                else:
+                    logger.warning(f"⚠️  [AKSHARE-港股] 获取到空数据")
+                    return pd.DataFrame()
+                
+                # 在获取数据后进行日期过滤（如果已经设置了日期索引）
+                if isinstance(df.index, pd.DatetimeIndex):
+                    try:
+                        # 转换日期字符串为日期对象
                         if start_date.isdigit() and len(start_date) == 8:
                             start_date_dt = pd.to_datetime(start_date, format='%Y%m%d')
                         else:
                             start_date_dt = pd.to_datetime(start_date)
-                    else:
-                        start_date_dt = pd.to_datetime((datetime.now() - timedelta(days=365)).strftime('%Y%m%d'))
-                        
-                    if end_date:
+                            
                         if end_date.isdigit() and len(end_date) == 8:
                             end_date_dt = pd.to_datetime(end_date, format='%Y%m%d')
                         else:
                             end_date_dt = pd.to_datetime(end_date)
-                    else:
-                        end_date_dt = pd.to_datetime(datetime.now().strftime('%Y%m%d'))
-                    
-                    # 过滤日期范围
-                    df = df[(df.index >= start_date_dt) & (df.index <= end_date_dt)]
-                    logger.debug(f"港股日期过滤后数据点数: {len(df)}")
-                    
-                except Exception as e:
-                    logger.warning(f"港股日期过滤出错: {str(e)}，使用原始数据")
+                        
+                        # 过滤日期范围
+                        original_len = len(df)
+                        df = df[(df.index >= start_date_dt) & (df.index <= end_date_dt)]
+                        logger.info(f"🔧 [AKSHARE-港股] 日期过滤: {original_len} -> {len(df)} 条记录")
+                        
+                    except Exception as e:
+                        logger.warning(f"⚠️  [AKSHARE-港股] 日期过滤出错: {str(e)}，使用原始数据")
                 
             elif market_type in ['US']:
-                logger.debug(f"获取美股数据: {stock_code}")
+                logger.info(f"📈 [AKSHARE-美股] 调用 ak.stock_us_daily(symbol={stock_code}, adjust='qfq')")
                 try:
                     df = ak.stock_us_daily(
                         symbol=stock_code,
                         adjust="qfq"
                     )
-                    logger.debug(f"美股数据原始列: {df.columns.tolist()}")
-                    logger.debug(f"美股数据形状: {df.shape}")
                     
-                    # 确保索引是日期时间类型
-                    if not isinstance(df.index, pd.DatetimeIndex):
-                        # 如果存在命名为'date'的列，将其设为索引
-                        if 'date' in df.columns:
-                            df['date'] = pd.to_datetime(df['date'])
-                            df.set_index('date', inplace=True)
-                            logger.debug("已将'date'列设置为索引")
-                        else:
-                            # 否则将当前索引转换为日期类型
-                            df.index = pd.to_datetime(df.index)
-                            logger.debug("已将索引转换为DatetimeIndex")
+                    # 🔍 添加美股原始数据日志
+                    if not df.empty:
+                        logger.info(f"✅ [AKSHARE-美股] 数据获取成功，原始数据形状: {df.shape}")
+                        logger.info(f"📋 [AKSHARE-美股] 原始列名: {df.columns.tolist()}")
+                        logger.info(f"🔍 [AKSHARE-美股] 原始索引类型: {type(df.index)}")
+                        if hasattr(df.index, 'min') and hasattr(df.index, 'max'):
+                            logger.info(f"📅 [AKSHARE-美股] 原始索引范围: {df.index.min()} 到 {df.index.max()}")
+                    else:
+                        logger.warning(f"⚠️  [AKSHARE-美股] 获取到空数据")
                     
                     # 计算美股的成交额（Amount）= 成交量（Volume）× 收盘价（Close）
                     volume_col = next((col for col in df.columns if col.lower() == 'volume'), None)
@@ -185,12 +223,22 @@ class StockDataProvider:
                     logger.warning(f"日期过滤出错: {str(e)}，返回原始数据")
                     
             elif market_type in ['ETF']:
-                logger.debug(f"获取{market_type}基金数据: {stock_code}")
+                logger.info(f"📈 [AKSHARE-ETF] 调用 ak.fund_etf_hist_em(symbol={stock_code}, start_date={start_date}, end_date={end_date})")
                 df = ak.fund_etf_hist_em(
                     symbol=stock_code,
                     start_date=start_date.replace('-', ''),
                     end_date=end_date.replace('-', '')
                 )
+                
+                logger.info(f"📊 [AKSHARE-ETF] 原始数据形状: {df.shape}")
+                logger.info(f"📋 [AKSHARE-ETF] 原始列名: {df.columns.tolist()}")
+                
+                if not df.empty:
+                    logger.info(f"✅ [AKSHARE-ETF] 数据获取成功")
+                else:
+                    logger.warning(f"⚠️  [AKSHARE-ETF] 获取到空数据")
+                    return pd.DataFrame()
+                
             elif market_type in ['LOF']:
                 logger.debug(f"获取{market_type}基金数据: {stock_code}")
                 df = ak.fund_lof_hist_em(
@@ -204,16 +252,35 @@ class StockDataProvider:
                 logger.error(f"[市场类型错误] {error_msg}")
                 raise ValueError(error_msg)
                 
+            # 🔍 检查数据是否为空
+            if df.empty:
+                logger.warning(f"⚠️  [数据为空] {market_type}数据为空，跳过标准化处理")
+                return df
+                
+            # 🔍 数据标准化前的日志
+            logger.info(f"🔧 [数据标准化] 开始标准化列名，当前数据形状: {df.shape}")
+            logger.info(f"🔧 [数据标准化] 当前列名: {df.columns.tolist()}")
+                
             # 标准化列名
             if market_type == 'A':
-                # 根据实际数据结构调整列名映射
-                # 实际数据列：['日期', '股票代码', '开盘', '收盘', '最高', '最低', '成交量', '成交额', '振幅', '涨跌幅', '涨跌额', '换手率']
-                df.columns = ['Date', 'Code', 'Open', 'Close', 'High', 'Low', 'Volume', 'Amount', 'Amplitude', 'Change_pct', 'Change', 'Turnover']
+                # 检查列数是否匹配
+                expected_columns = ['Date', 'Code', 'Open', 'Close', 'High', 'Low', 'Volume', 'Amount', 'Amplitude', 'Change_pct', 'Change', 'Turnover']
+                if len(df.columns) != len(expected_columns):
+                    logger.error(f"❌ [列数不匹配] A股数据列数 {len(df.columns)} 不等于期望列数 {len(expected_columns)}")
+                    logger.error(f"❌ [列数不匹配] 实际列名: {df.columns.tolist()}")
+                    logger.error(f"❌ [列数不匹配] 期望列名: {expected_columns}")
+                    # 返回空DataFrame避免错误
+                    return pd.DataFrame()
+                
+                original_columns = df.columns.tolist()
+                df.columns = expected_columns
+                logger.info(f"🔧 [数据标准化-A股] 列名映射: {dict(zip(original_columns, df.columns))}")
+                
             elif market_type in ['HK', 'US']:
-                # 美股数据列可能不同，需要通过映射处理
+                # 港股/美股数据列映射处理
                 columns_mapping = {
                     'open': 'Open',
-                    'high': 'High',
+                    'high': 'High', 
                     'low': 'Low',
                     'close': 'Close',
                     'volume': 'Volume',
@@ -227,27 +294,96 @@ class StockDataProvider:
                 for orig_col, new_col in columns_mapping.items():
                     if orig_col in df.columns:
                         new_df[new_col] = df[orig_col]
+                        logger.info(f"🔧 [数据标准化-{market_type}] 映射列: {orig_col} -> {new_col}")
                     else:
                         # 如果原始列不存在，创建一个填充0的列
-                        logger.warning(f"数据中缺少{orig_col}列，使用0值填充")
+                        logger.warning(f"⚠️  [数据标准化-{market_type}] 缺少{orig_col}列，使用0值填充")
                         new_df[new_col] = 0.0
                 
                 # 替换原始df
                 df = new_df
+                logger.info(f"🔧 [数据标准化-{market_type}] 列名标准化完成")
                 
             elif market_type in ['ETF', 'LOF']:
-                # 基金数据可能有不同的列
-                df.columns = ['Date', 'Open', 'Close', 'High', 'Low', 'Volume', 'Amount', 'Amplitude', 'Change_pct', 'Change', 'Turnover']
+                # 检查列数是否匹配
+                expected_columns = ['Date', 'Open', 'Close', 'High', 'Low', 'Volume', 'Amount', 'Amplitude', 'Change_pct', 'Change', 'Turnover']
+                if len(df.columns) != len(expected_columns):
+                    logger.error(f"❌ [列数不匹配] {market_type}数据列数 {len(df.columns)} 不等于期望列数 {len(expected_columns)}")
+                    logger.error(f"❌ [列数不匹配] 实际列名: {df.columns.tolist()}")
+                    logger.error(f"❌ [列数不匹配] 期望列名: {expected_columns}")
+                    # 返回空DataFrame避免错误
+                    return pd.DataFrame()
+                
+                original_columns = df.columns.tolist()
+                df.columns = expected_columns
+                logger.info(f"🔧 [数据标准化-{market_type}] 列名映射: {dict(zip(original_columns, df.columns))}")
                 
             # 确保日期列是日期类型
-            if 'Date' in df.columns:
+            if market_type in ['A', 'ETF', 'LOF'] and 'Date' in df.columns:
                 df['Date'] = pd.to_datetime(df['Date'])
                 df.set_index('Date', inplace=True)
+                logger.info(f"🔧 [数据标准化] 已将Date列设置为索引")
+            elif market_type in ['HK', 'US']:
+                # 港股和美股已经在前面处理了日期索引
+                logger.info(f"🔧 [数据标准化] {market_type}数据日期索引已处理")
                 
             # 确保按日期升序排序
             df.sort_index(inplace=True)
                 
-            logger.info(f"成功获取{market_type}数据 {stock_code}, 数据点数: {len(df)}")
+            # 🔍 最终数据验证日志
+            if not df.empty:
+                # 获取最新数据信息
+                if isinstance(df.index, pd.DatetimeIndex):
+                    latest_date = df.index[-1]
+                    latest_date_str = latest_date.strftime('%Y-%m-%d')
+                    is_date_index = True
+                else:
+                    latest_date = df.index[-1]
+                    latest_date_str = str(latest_date)
+                    is_date_index = False
+                
+                latest_close = df.iloc[-1]['Close'] if 'Close' in df.columns else 'N/A'
+                latest_change_pct = df.iloc[-1].get('Change_pct', 'N/A')
+                
+                logger.info(f"✅ [数据验证] 数据处理完成")
+                logger.info(f"📊 [数据验证] 最终数据形状: {df.shape}")
+                logger.info(f"📋 [数据验证] 最终列名: {df.columns.tolist()}")
+                logger.info(f"📅 [数据验证] 最新数据日期: {latest_date_str}")
+                logger.info(f"💰 [数据验证] 最新收盘价: {latest_close}")
+                logger.info(f"📈 [数据验证] 最新涨跌幅: {latest_change_pct}")
+                logger.info(f"🔍 [数据验证] 索引类型: {'日期索引' if is_date_index else '数字索引'}")
+                
+                # 🔍 日期异常检查（仅对日期索引进行检查）
+                if is_date_index:
+                    current_date = datetime.now().date()
+                    if hasattr(latest_date, 'date'):
+                        latest_date_obj = latest_date.date()
+                    else:
+                        latest_date_obj = pd.to_datetime(latest_date).date()
+                        
+                    days_diff = (latest_date_obj - current_date).days
+                    if days_diff > 0:
+                        logger.warning(f"⚠️  [日期异常] 最新数据日期 {latest_date_obj} 超前于当前日期 {current_date} {days_diff} 天")
+                    elif days_diff < -7:
+                        logger.warning(f"⚠️  [日期异常] 最新数据日期 {latest_date_obj} 滞后于当前日期 {current_date} {abs(days_diff)} 天")
+                    else:
+                        logger.info(f"✅ [日期验证] 数据日期正常，距离当前日期 {abs(days_diff)} 天")
+                else:
+                    logger.info(f"ℹ️  [日期验证] 使用数字索引，跳过日期验证")
+                
+                # 🔍 显示最近几天的数据
+                logger.info(f"📋 [数据样本] 最近3天数据:")
+                recent_data = df.tail(3)
+                for i, (idx, row) in enumerate(recent_data.iterrows()):
+                    if is_date_index:
+                        date_str = idx.strftime('%Y-%m-%d') if hasattr(idx, 'strftime') else str(idx)
+                    else:
+                        date_str = str(idx)
+                    close_price = row.get('Close', 'N/A')
+                    change_pct = row.get('Change_pct', 'N/A')
+                    logger.info(f"   第{i+1}天: {date_str}, 收盘={close_price}, 涨跌幅={change_pct}%")
+
+            logger.info(f"✅ [AKSHARE完成] 成功获取{market_type}数据 {stock_code}, 数据点数: {len(df)}")
             return df
             
         except Exception as e:

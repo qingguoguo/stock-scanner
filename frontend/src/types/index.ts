@@ -37,6 +37,7 @@ export interface StockInfo {
   macd_signal?: string;
   volume_status?: string;
   analysis_date?: string;
+  price_date?: string;
 }
 
 export interface SearchResult {
@@ -107,5 +108,6 @@ export interface StreamAnalysisUpdate {
   macd_signal?: string;
   volume_status?: string;
   analysis_date?: string;
+  price_date?: string;
   ai_analysis_chunk?: string;
 }

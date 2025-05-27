@@ -87,6 +87,41 @@ class AIAnalyzer:
                 'rsi_level': df.iloc[-1]['RSI']
             }
             
+            # 分析日期：系统进行分析的日期（当前日期）
+            analysis_date = datetime.now().strftime('%Y-%m-%d')
+            
+            # 价格日期：数据的最新日期
+            if not df.empty and hasattr(df.index, 'max'):
+                try:
+                    latest_data_date = df.index.max()
+                    if pd.notna(latest_data_date) and hasattr(latest_data_date, 'strftime'):
+                        price_date = latest_data_date.strftime('%Y-%m-%d')
+                        
+                        # 计算数据延迟天数
+                        current_date = datetime.now().date()
+                        data_date = latest_data_date.date() if hasattr(latest_data_date, 'date') else pd.to_datetime(latest_data_date).date()
+                        days_delay = (current_date - data_date).days
+                        
+                        logger.info(f"📅 [日期信息] 分析日期: {analysis_date}, 价格日期: {price_date}, 数据延迟: {days_delay}天")
+                    else:
+                        price_date = analysis_date
+                        days_delay = 0
+                except Exception as e:
+                    price_date = analysis_date
+                    days_delay = 0
+            else:
+                price_date = analysis_date
+                days_delay = 0
+
+            # 在AI提示词中添加两个日期的说明
+            data_timeliness_note = f"""
+数据时效性说明：
+- 分析执行日期：{analysis_date}
+- 价格数据日期：{price_date}
+- 数据延迟：{days_delay}天
+{"- 注意：价格数据可能因周末、节假日或数据源更新延迟而不是最新的" if days_delay > 0 else "- 数据为最新"}
+"""
+            
             # 根据市场类型调整分析提示
             if market_type in ['ETF', 'LOF']:
                 prompt = f"""
@@ -186,9 +221,6 @@ class AIAnalyzer:
                 "Authorization": f"Bearer {self.API_KEY}"
             }
             
-            # 获取当前日期作为分析日期
-            analysis_date = datetime.now().strftime("%Y-%m-%d")
-            
             # 异步请求API
             async with httpx.AsyncClient(timeout=self.API_TIMEOUT) as client:
                 # 记录请求
@@ -204,7 +236,8 @@ class AIAnalyzer:
                     "ma_trend": ma_trend,
                     "macd_signal": macd_signal_type,
                     "volume_status": volume_status,
-                    "analysis_date": analysis_date
+                    "analysis_date": analysis_date,   # 分析日期
+                    "price_date": price_date          # 价格日期
                 })
                 
                 if stream:
@@ -332,7 +365,9 @@ class AIAnalyzer:
                             "stock_code": stock_code,
                             "status": "completed",
                             "score": score,
-                            "recommendation": recommendation
+                            "recommendation": recommendation,
+                            "analysis_date": analysis_date,   # 分析日期
+                            "price_date": price_date          # 价格日期
                         })
                 else:
                     # 非流式响应处理
@@ -371,7 +406,8 @@ class AIAnalyzer:
                         "ma_trend": ma_trend,
                         "macd_signal": macd_signal_type,
                         "volume_status": volume_status,
-                        "analysis_date": analysis_date
+                        "analysis_date": analysis_date,   # 分析日期
+                        "price_date": price_date          # 价格日期
                     })
                     
         except Exception as e:
